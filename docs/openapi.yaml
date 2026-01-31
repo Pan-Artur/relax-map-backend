@@ -1,0 +1,366 @@
+openapi: 3.0.3
+info:
+  title: RelaxMap API
+  version: 1.0.0
+  description: API для локацій, відгуків та аутентифікації
+
+servers:
+  - url: http://localhost:4000/swagger
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Locations
+  - name: Reviews
+  - name: Categories
+  - name: Upload
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        avatar:
+          type: string
+          nullable: true
+
+    LocationCard:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        region:
+          type: string
+        poster:
+          type: string
+        rate:
+          type: number
+        reviewsCount:
+          type: integer
+        author:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+
+    Review:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        rating:
+          type: integer
+        text:
+          type: string
+        author:
+          type: object
+          properties:
+            id:
+              type: string
+              format: uuid
+            name:
+              type: string
+        createdAt:
+          type: string
+          format: date-time
+
+paths:
+
+  # AUTH
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+                  token: { type: string }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Register
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                password: { type: string }
+      responses:
+        201:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user: { $ref: '#/components/schemas/User' }
+                  token: { type: string }
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+
+  # USERS
+  /users/{id}:
+    get:
+      tags: [Users]
+      summary: Get public user profile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  avatar:
+                    type: string
+                    nullable: true
+                  locationsCount: { type: integer }
+
+  # LOCATIONS
+  /locations:
+    get:
+      tags: [Locations]
+      summary: Get locations list
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: region
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer }
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/LocationCard' }
+                  total: { type: integer }
+
+    post:
+      tags: [Locations]
+      summary: Create location
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, region, description, categoryId, poster]
+              properties:
+                title: { type: string }
+                region: { type: string }
+                description: { type: string }
+                categoryId: { type: string }
+                poster: { type: string }
+                gallery:
+                  type: array
+                  items: { type: string }
+      responses:
+        201:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+
+  /locations/{id}:
+    get:
+      tags: [Locations]
+      summary: Get location details
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  title: { type: string }
+                  region: { type: string }
+                  description: { type: string }
+                  poster: { type: string }
+                  gallery:
+                    type: array
+                    items: { type: string }
+                  rate: { type: number }
+                  author: { $ref: '#/components/schemas/User' }
+                  place: { type: string }
+                  reviews:
+                    type: array
+                    items: { $ref: '#/components/schemas/Review' }
+
+    put:
+      tags: [Locations]
+      summary: Update location
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        200:
+          description: Updated
+
+    delete:
+      tags: [Locations]
+      summary: Delete location
+      security:
+        - bearerAuth: []
+      responses:
+        204:
+          description: Deleted
+
+  # REVIEWS
+  /locations/{id}/reviews:
+    post:
+      tags: [Reviews]
+      summary: Add review
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [rating, text]
+              properties:
+                rating: { type: integer }
+                text: { type: string }
+      responses:
+        201:
+          description: Created
+
+  /reviews/{id}:
+    delete:
+      tags: [Reviews]
+      summary: Delete review
+      security:
+        - bearerAuth: []
+      responses:
+        204:
+          description: No Content
+
+  # CATEGORIES
+  /categories:
+    get:
+      tags: [Categories]
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+
+  # UPLOAD
+  /upload:
+    post:
+      tags: [Upload]
+      summary: Upload image
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        200:
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  url: { type: string }
