@@ -91,6 +91,7 @@ app.post("/auth/register", async (req, res) => {
 
 app.post("/auth/login", async (req, res) => {
   const { email, password } = req.body;
+  
   const result = await pool.query("SELECT * FROM users WHERE email=$1", [
     email,
   ]);
@@ -127,33 +128,54 @@ app.get("/auth/me", authMiddleware, async (req, res) => {
 //Users
 
 app.get("/users/:id", async (req, res) => {
-  const { id } = req.params;
-  const result = await pool.query(
-    `SELECT u.id, u.name, u.avatar, COUNT(l.id) as "locationsCount"
-     FROM users u
-     LEFT JOIN locations l ON l.author_id = u.id
-     WHERE u.id=$1
-     GROUP BY u.id`,
-    [id],
-  );
+  try {
+    const { id } = req.params;
 
-  res.json(result.rows[0]);
+    const result = await pool.query(
+      `SELECT u.id, u.name, u.avatar, COUNT(l.id)::int as "locationsCount"
+       FROM users u
+       LEFT JOIN locations l ON l.author_id = u.id
+       WHERE u.id=$1
+       GROUP BY u.id`,
+      [id],
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("GET USER ERROR:", err);
+    res.status(500).json({ message: "Failed to load user" });
+  }
 });
 
 app.get("/users/:id/locations", async (req, res) => {
-  const { id } = req.params;
-  const result = await pool.query(
-    "SELECT id, title, region, poster, rate, 0 as reviewsCount, author_id as author FROM locations WHERE author_id=$1",
-    [id],
-  );
+  try {
+    const { id } = req.params;
 
-  res.json(result.rows);
+    const result = await pool.query(
+      `SELECT id, title, region, poster, COALESCE(rate,0) as rate,
+              0 as "reviewsCount",
+              author_id as author
+       FROM locations
+       WHERE author_id=$1`,
+      [id],
+    );
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("USER LOCATIONS ERROR:", err);
+    res.status(500).json({ message: "Failed to load user locations" });
+  }
 });
 
 //Locations
 
 app.get("/locations", async (req, res) => {
   const { search, category, region, page = 1, limit = 10 } = req.query;
+
   const offset = (page - 1) * limit;
   const result = await pool.query(
     `SELECT * FROM locations
@@ -176,24 +198,22 @@ app.get("/locations/:id", async (req, res) => {
 });
 
 app.post("/locations", authMiddleware, async (req, res) => {
-  const { title, region, description, categoryId, poster, gallery } = req.body;
-  const id = uuidv4();
+  try {
+    const { title, region, description, poster } = req.body;
+    const id = uuidv4();
 
-  await pool.query(
-    "INSERT INTO locations (id, title, region, description, category_id, poster, gallery, author_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
-    [
-      id,
-      title,
-      region,
-      description,
-      categoryId,
-      poster,
-      gallery || [],
-      req.user.id,
-    ],
-  );
+    await pool.query(
+      `INSERT INTO locations
+       (id, title, region, description, poster, author_id)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [id, title, region, description, poster, req.user.id],
+    );
 
-  res.status(201).json({ id });
+    res.status(201).json({ id });
+  } catch (err) {
+    console.error("CREATE LOCATION ERROR:", err);
+    res.status(500).json({ message: "Failed to create location" });
+  }
 });
 
 app.put("/locations/:id", authMiddleware, async (req, res) => {
