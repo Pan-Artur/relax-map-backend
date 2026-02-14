@@ -188,18 +188,18 @@ app.get("/locations", async (req, res) => {
   const offset = (page - 1) * limit;
 
   const result = await pool.query(
-    `SELECT l.*, 
+    `SELECT l.*,
           u.name AS author_name,
           COALESCE(AVG(r.rating), 0) AS rate
-    FROM locations l
-    LEFT JOIN users u ON l.author_id = u.id
-    LEFT JOIN reviews r ON r.location_id = l.id
-    WHERE ($1::text IS NULL OR l.title ILIKE '%'||$1||'%')
-      AND ($2::text IS NULL OR l.category_id=$2)
-      AND ($3::text IS NULL OR l.region=$3)
-    GROUP BY l.id, u.name
-    LIMIT $4 OFFSET $5`,
-    [search, category, region, limit, offset],
+   FROM locations l
+   LEFT JOIN users u ON l.author_id = u.id
+   LEFT JOIN reviews r ON r.location_id = l.id
+   WHERE ($1::text IS NULL OR l.title ILIKE '%' || $1 || '%')
+     AND ($2::text IS NULL OR l.category_id = $2)
+     AND ($3::text IS NULL OR l.region = $3)
+   GROUP BY l.id, u.name
+   LIMIT $4 OFFSET $5`,
+    [search || null, category || null, region || null, limit, offset],
   );
 
   const total = await pool.query("SELECT COUNT(*) FROM locations");
