@@ -25,6 +25,9 @@ const dirname = path.dirname(filename);
 const swaggerPath = path.join(dirname, "../docs/openapi.yaml");
 const swaggerFile = fs.readFileSync(swaggerPath, "utf8");
 const swaggerDoc = YAML.parse(swaggerFile);
+
+app.use("/uploads", express.static(path.join(dirname, "../uploads")));
+
 app.use("/swagger", swaggerUi.serve, swaggerUi.setup(swaggerDoc));
 
 const PORT = process.env.PORT;
@@ -153,6 +156,7 @@ app.get("/users/:id", async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error("GET USER ERROR:", err);
+    
     res.status(500).json({ message: "Failed to load user" });
   }
 });
@@ -181,16 +185,20 @@ app.get("/users/:id/locations", async (req, res) => {
 
 app.get("/locations", async (req, res) => {
   const { search, category, region, page = 1, limit = 10 } = req.query;
-
   const offset = (page - 1) * limit;
+
   const result = await pool.query(
-    `SELECT * FROM locations
-     WHERE ($1::text IS NULL OR title ILIKE '%'||$1||'%')
-       AND ($2::text IS NULL OR category_id=$2)
-       AND ($3::text IS NULL OR region=$3)
+    `SELECT l.*, u.name AS author_name
+            COALESCE(AVG(r.rating), 0) AS rate
+     FROM locations l
+     LEFT JOIN users u ON l.author_id = u.id
+     WHERE ($1::text IS NULL OR l.title ILIKE '%'||$1||'%')
+       AND ($2::text IS NULL OR l.category_id=$2)
+       AND ($3::text IS NULL OR l.region=$3)
      LIMIT $4 OFFSET $5`,
     [search, category, region, limit, offset],
   );
+
   const total = await pool.query("SELECT COUNT(*) FROM locations");
 
   res.json({ items: result.rows, total: parseInt(total.rows[0].count) });
@@ -198,26 +206,66 @@ app.get("/locations", async (req, res) => {
 
 app.get("/locations/:id", async (req, res) => {
   const { id } = req.params;
-  const result = await pool.query("SELECT * FROM locations WHERE id=$1", [id]);
+
+  const result = await pool.query(
+    `SELECT l.*, u.name AS author_name,
+            COALESCE(AVG(r.rating), 0) AS rate
+     FROM locations l
+     LEFT JOIN users u ON l.author_id = u.id
+     LEFT JOIN reviews r ON r.location_id = l.id
+     WHERE l.id = $1
+     GROUP BY l.id, u.name`,
+    [id],
+  );
+
+  if (!result.rows.length)
+    return res.status(404).json({ message: "Location not found" });
 
   res.json(result.rows[0]);
 });
 
 app.post("/locations", authMiddleware, async (req, res) => {
   try {
-    const { title, region, description, poster } = req.body;
+    const { title, region, description, poster, place } = req.body;
     const id = uuidv4();
 
     await pool.query(
-      `INSERT INTO locations
-       (id, title, region, description, poster, author_id)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [id, title, region, description, poster, req.user.id],
+      `INSERT INTO locations (id, title, region, description, poster, gallery, place, author_id)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [
+        id,
+        title,
+        region,
+        description,
+        poster,
+        [poster],
+        place,
+        req.user.id,
+      ],
     );
 
-    res.status(201).json({ id });
+    const authorRes = await pool.query(`SELECT name FROM users WHERE id = $1`, [
+      req.user.id,
+    ]);
+
+    const authorName = authorRes.rows[0]?.name || "Невідомо";
+
+    const newLocation = {
+      id,
+      title,
+      region,
+      description,
+      poster: poster,
+      gallery: [poster],
+      place,
+      author_id: req.user.id,
+      author_name: authorName,
+    };
+
+    res.status(201).json(newLocation);
   } catch (err) {
     console.error("CREATE LOCATION ERROR:", err);
+
     res.status(500).json({ message: "Failed to create location" });
   }
 });
@@ -246,19 +294,38 @@ app.delete("/locations/:id", authMiddleware, async (req, res) => {
 
 //Reviews
 
-app.get("/locations/:id/reviews", authMiddleware, async (req, res) => {
+app.get("/locations/:id/reviews", async (req, res) => {
   const { id } = req.params;
 
-  const reviews = await pool.query(
-    "SELECT * FROM reviews WHERE location_id = $1 ORDER BY created_at DESC",
-    [id],
-  );
-  res.json(reviews.rows);
+  try {
+    const reviews = await pool.query(
+      `SELECT r.rating, r.text AS comment, r.created_at, u.name AS authorname, l.title AS locationname
+       FROM reviews r
+       JOIN users u ON r.author_id = u.id
+       JOIN locations l ON r.location_id = l.id
+       WHERE r.location_id = $1
+       ORDER BY r.created_at DESC`,
+      [id],
+    );
+
+    res.json(reviews.rows);
+  } catch (err) {
+    console.error(err);
+
+    res.status(500);
+  }
 });
 
 app.post("/locations/:id/reviews", authMiddleware, async (req, res) => {
   const { id } = req.params;
   const { rating, text } = req.body;
+
+  if (!text || text.length > 100) {
+    return res
+      .status(400)
+      .json({ message: "The review cannot exceed 100 characters." });
+  }
+
   const reviewId = uuidv4();
 
   await pool.query(
