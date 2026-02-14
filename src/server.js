@@ -156,7 +156,7 @@ app.get("/users/:id", async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error("GET USER ERROR:", err);
-    
+
     res.status(500).json({ message: "Failed to load user" });
   }
 });
@@ -188,14 +188,17 @@ app.get("/locations", async (req, res) => {
   const offset = (page - 1) * limit;
 
   const result = await pool.query(
-    `SELECT l.*, u.name AS author_name
-            COALESCE(AVG(r.rating), 0) AS rate
-     FROM locations l
-     LEFT JOIN users u ON l.author_id = u.id
-     WHERE ($1::text IS NULL OR l.title ILIKE '%'||$1||'%')
-       AND ($2::text IS NULL OR l.category_id=$2)
-       AND ($3::text IS NULL OR l.region=$3)
-     LIMIT $4 OFFSET $5`,
+    `SELECT l.*, 
+          u.name AS author_name,
+          COALESCE(AVG(r.rating), 0) AS rate
+    FROM locations l
+    LEFT JOIN users u ON l.author_id = u.id
+    LEFT JOIN reviews r ON r.location_id = l.id
+    WHERE ($1::text IS NULL OR l.title ILIKE '%'||$1||'%')
+      AND ($2::text IS NULL OR l.category_id=$2)
+      AND ($3::text IS NULL OR l.region=$3)
+    GROUP BY l.id, u.name
+    LIMIT $4 OFFSET $5`,
     [search, category, region, limit, offset],
   );
 
@@ -232,16 +235,7 @@ app.post("/locations", authMiddleware, async (req, res) => {
     await pool.query(
       `INSERT INTO locations (id, title, region, description, poster, gallery, place, author_id)
    VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [
-        id,
-        title,
-        region,
-        description,
-        poster,
-        [poster],
-        place,
-        req.user.id,
-      ],
+      [id, title, region, description, poster, [poster], place, req.user.id],
     );
 
     const authorRes = await pool.query(`SELECT name FROM users WHERE id = $1`, [
