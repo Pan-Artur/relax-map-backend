@@ -40,7 +40,7 @@ const pool = new Pool({
 
 const authMiddleware = async (req, res, next) => {
   const authHeader = req.headers.authorization;
-  
+
   if (!authHeader) return res.status(401).json({ message: "No token" });
 
   const token = authHeader.split(" ")[1];
@@ -65,7 +65,9 @@ app.post("/auth/register", async (req, res) => {
   }
 
   try {
-    const existing = await pool.query("SELECT id FROM users WHERE email=$1", [email]);
+    const existing = await pool.query("SELECT id FROM users WHERE email=$1", [
+      email,
+    ]);
 
     if (existing.rows.length > 0) {
       return res.status(400).json({ message: "Email already registered" });
@@ -81,7 +83,9 @@ app.post("/auth/register", async (req, res) => {
 
     const token = jwt.sign({ id, email }, JWT_SECRET);
 
-    res.status(201).json({ user: { id, name: username, email, avatar: null }, token });
+    res
+      .status(201)
+      .json({ user: { id, name: username, email, avatar: null }, token });
   } catch (err) {
     console.error("REGISTER ERROR:", err);
 
@@ -91,7 +95,7 @@ app.post("/auth/register", async (req, res) => {
 
 app.post("/auth/login", async (req, res) => {
   const { email, password } = req.body;
-  
+
   const result = await pool.query("SELECT * FROM users WHERE email=$1", [
     email,
   ]);
@@ -103,7 +107,9 @@ app.post("/auth/login", async (req, res) => {
 
   if (!isValid) return res.status(401).json({ message: "Wrong password" });
 
-  const token = jwt.sign({ id: user.id, email }, JWT_SECRET, { expiresIn: "7d" });
+  const token = jwt.sign({ id: user.id, email }, JWT_SECRET, {
+    expiresIn: "7d",
+  });
 
   res.json({
     user: {
@@ -239,6 +245,16 @@ app.delete("/locations/:id", authMiddleware, async (req, res) => {
 });
 
 //Reviews
+
+app.get("/locations/:id/reviews", authMiddleware, async (req, res) => {
+  const { id } = req.params;
+
+  const reviews = await pool.query(
+    "SELECT * FROM reviews WHERE location_id = $1 ORDER BY created_at DESC",
+    [id],
+  );
+  res.json(reviews.rows);
+});
 
 app.post("/locations/:id/reviews", authMiddleware, async (req, res) => {
   const { id } = req.params;
