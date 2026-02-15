@@ -191,6 +191,31 @@ app.get("/locations", async (req, res) => {
     const limitNum = parseInt(limit);
     const offset = (pageNum - 1) * limitNum;
 
+    let conditions = [];
+    let values = [];
+    let index = 1;
+
+    if (search) {
+      conditions.push(`l.title ILIKE '%' || $${index} || '%'`);
+      values.push(search);
+      index++;
+    }
+
+    if (category) {
+      conditions.push(`l.category_id = $${index}::uuid`);
+      values.push(category);
+      index++;
+    }
+
+    if (region) {
+      conditions.push(`l.region = $${index}`);
+      values.push(region);
+      index++;
+    }
+
+    const whereClause =
+      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
     const result = await pool.query(
       `SELECT 
           l.id,
@@ -205,9 +230,7 @@ app.get("/locations", async (req, res) => {
        FROM locations l
        LEFT JOIN users u ON l.author_id = u.id
        LEFT JOIN reviews r ON r.location_id = l.id
-       WHERE ($1::text IS NULL OR l.title ILIKE '%' || $1::text || '%')
-         AND ($2 IS NULL OR l.category_id = $2::uuid)
-         AND ($3::text IS NULL OR l.region = $3::text)
+       ${whereClause}
        GROUP BY 
           l.id,
           l.title,
@@ -217,8 +240,8 @@ app.get("/locations", async (req, res) => {
           l.place,
           l.author_id,
           u.name
-       LIMIT $4 OFFSET $5`,
-      [search || null, category || null, region || null, limitNum, offset],
+       LIMIT $${index} OFFSET $${index + 1}`,
+      [...values, limitNum, offset]
     );
 
     const total = await pool.query("SELECT COUNT(*) FROM locations");
