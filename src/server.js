@@ -205,9 +205,9 @@ app.get("/locations", async (req, res) => {
        FROM locations l
        LEFT JOIN users u ON l.author_id = u.id
        LEFT JOIN reviews r ON r.location_id = l.id
-       WHERE ($1 IS NULL OR l.title ILIKE '%' || $1 || '%')
+       WHERE ($1::text IS NULL OR l.title ILIKE '%' || $1::text || '%')
          AND ($2 IS NULL OR l.category_id = $2::uuid)
-         AND ($3 IS NULL OR l.region = $3)
+         AND ($3::text IS NULL OR l.region = $3::text)
        GROUP BY 
           l.id,
           l.title,
@@ -256,7 +256,7 @@ app.get("/locations/:id", async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error("GET LOCATION ERROR:", err);
-    
+
     res.status(500).json({ message: "Failed to load location" });
   }
 });
