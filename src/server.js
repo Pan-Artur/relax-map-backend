@@ -231,28 +231,36 @@ app.get("/locations", async (req, res) => {
 });
 
 app.get("/locations/:id", async (req, res) => {
-  const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-  const result = await pool.query(
-    `SELECT l.id,
+    const result = await pool.query(
+      `SELECT 
+          l.id,
           l.title,
           l.region,
           l.poster,
           COALESCE(AVG(r.rating),0) as rate,
           COUNT(r.id)::int as "reviewsCount",
           l.author_id as author
-   FROM locations l
-   LEFT JOIN reviews r ON r.location_id = l.id
-   WHERE l.author_id=$1
-   GROUP BY l.id`,
-    [id],
-  );
+       FROM locations l
+       LEFT JOIN reviews r ON r.location_id = l.id
+       WHERE l.id = $1::uuid
+       GROUP BY l.id`,
+      [id],
+    );
 
-  if (!result.rows.length)
-    return res.status(404).json({ message: "Location not found" });
+    if (!result.rows.length)
+      return res.status(404).json({ message: "Location not found" });
 
-  res.json(result.rows[0]);
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error("GET LOCATION ERROR:", err);
+    
+    res.status(500).json({ message: "Failed to load location" });
+  }
 });
+
 
 app.post("/locations", authMiddleware, async (req, res) => {
   try {
