@@ -8,9 +8,11 @@ import { fileURLToPath } from "url";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import dotenv from "dotenv";
+import { v2 as cloudinary } from 'cloudinary';
+import multer from 'multer';
+import streamifier from 'streamifier';
 
 dotenv.config();
 
@@ -21,6 +23,14 @@ app.use(express.json());
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
+
+const upload = multer();
+
+cloudinary.config({
+  cloud_name: process.env.CLOUD_NAME,
+  api_key: process.env.CLOUD_API_KEY,
+  api_secret: process.env.CLOUD_API_SECRET,
+});
 
 const swaggerPath = path.join(dirname, "../docs/openapi.yaml");
 const swaggerFile = fs.readFileSync(swaggerPath, "utf8");
@@ -406,12 +416,16 @@ app.get("/categories", async (req, res) => {
 
 //Upload
 
-const upload = multer({ dest: "uploads/" });
+app.post('/upload', authMiddleware, upload.single('file'), (req, res) => {
+  const stream = cloudinary.uploader.upload_stream(
+    { folder: 'locations' },
+    (err, result) => {
+      if (err) return res.status(500).json({ message: err.message });
+      res.json({ public_id: result.public_id, url: result.secure_url });
+    }
+  );
 
-app.post("/upload", authMiddleware, upload.single("file"), (req, res) => {
-  const url = `/uploads/${req.file.filename}`;
-
-  res.json({ url });
+  streamifier.createReadStream(req.file.buffer).pipe(stream);
 });
 
 //Start
