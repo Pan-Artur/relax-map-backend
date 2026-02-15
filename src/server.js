@@ -193,73 +193,47 @@ app.get("/users/:id/locations", async (req, res) => {
 
 //Locations
 
-app.get("/locations", async (req, res) => {
+app.post("/locations", authMiddleware, upload.single("poster"), async (req, res) => {
   try {
-    const { search, category, region, page = 1, limit = 10 } = req.query;
+    const { title, region, description, place } = req.body;
+    const id = uuidv4();
 
-    const pageNum = parseInt(page);
-    const limitNum = parseInt(limit);
-    const offset = (pageNum - 1) * limitNum;
+    let posterUrl = null;
 
-    let conditions = [];
-    let values = [];
-    let index = 1;
+    if (req.file) {
+      const result = await new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          { folder: "locations" },
+          (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          }
+        );
+        streamifier.createReadStream(req.file.buffer).pipe(stream);
+      });
 
-    if (search) {
-      conditions.push(`l.title ILIKE '%' || $${index} || '%'`);
-      values.push(search);
-      index++;
+      posterUrl = result.secure_url;
     }
 
-    if (category) {
-      conditions.push(`l.category_id = $${index}::uuid`);
-      values.push(category);
-      index++;
-    }
-
-    if (region) {
-      conditions.push(`l.region = $${index}`);
-      values.push(region);
-      index++;
-    }
-
-    const whereClause =
-      conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
-
-    const result = await pool.query(
-      `SELECT 
-          l.id,
-          l.title,
-          l.region,
-          l.poster,
-          l.description,
-          l.place,
-          l.author_id,
-          u.name AS author_name,
-          COALESCE(AVG(r.rating), 0) AS rate
-       FROM locations l
-       LEFT JOIN users u ON l.author_id = u.id
-       LEFT JOIN reviews r ON r.location_id = l.id
-       ${whereClause}
-       GROUP BY 
-          l.id,
-          l.title,
-          l.region,
-          l.poster,
-          l.description,
-          l.place,
-          l.author_id,
-          u.name
-       LIMIT $${index} OFFSET $${index + 1}`,
-      [...values, limitNum, offset]
+    await pool.query(
+      `INSERT INTO locations (id, title, region, description, poster, gallery, place, author_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [id, title, region, description, posterUrl, [posterUrl], place, req.user.id]
     );
 
-    const total = await pool.query("SELECT COUNT(*) FROM locations");
-
-    res.json({ items: result.rows, total: parseInt(total.rows[0].count) });
+    res.status(201).json({
+      id,
+      title,
+      region,
+      description,
+      poster: posterUrl,
+      gallery: [posterUrl],
+      place,
+      author_id: req.user.id
+    });
   } catch (err) {
-    console.error("LOCATIONS ERROR:", err);
-    res.status(500).json({ message: "Failed to load locations" });
+    console.error("CREATE LOCATION ERROR:", err);
+    res.status(500).json({ message: "Failed to create location" });
   }
 });
 
@@ -293,7 +267,6 @@ app.get("/locations/:id", async (req, res) => {
     res.status(500).json({ message: "Failed to load location" });
   }
 });
-
 
 app.post("/locations", authMiddleware, async (req, res) => {
   try {
